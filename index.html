@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Footfall Prediction — Tourist Places & Temples (Frontend)</title>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ====== GLOBAL LAYOUT ====== */
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#00bcd4; --muted:#9aa4b2; --glass: rgba(255,255,255,0.03);
+      --max-width:1200px;
+      --radius:12px;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      color-scheme: dark;
+    }
+    html,body{height:100%; margin:0; background:linear-gradient(180deg,#071023 0%, #071a2b 100%); color:#e6eef6}
+    .wrap{max-width:var(--max-width); margin:28px auto; padding:22px;}
+    header{display:flex; gap:18px; align-items:center; margin-bottom:18px}
+    header h1{font-size:20px; margin:0}
+    header p{margin:0; color:var(--muted); font-size:13px}
+
+    /* ====== GRID ====== */
+    .grid{display:grid; grid-template-columns: 420px 1fr; gap:18px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:var(--radius); padding:16px; box-shadow:0 6px 20px rgba(2,6,23,0.6);}
+
+    /* ====== LEFT PANEL ====== */
+    .panel h2{font-size:16px; margin:0 0 12px 0}
+    .file-uploader{display:flex; flex-direction:column; gap:8px}
+    label.btn{display:inline-block; padding:10px 12px; background:var(--glass); border-radius:8px; cursor:pointer; font-weight:600; color:var(--accent); border:1px solid rgba(255,255,255,0.03)}
+    input[type=file]{display:none}
+    .small{font-size:13px; color:var(--muted)}
+    .field{display:flex; flex-direction:column; gap:6px}
+    .row{display:flex; gap:8px}
+    select,input[type=number],input[type=text]{padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:transparent; color:inherit}
+    button.action{padding:10px 12px; border-radius:9px; background:var(--accent); color:#032; border:none; cursor:pointer; font-weight:700}
+    button.alt{background:transparent; border:1px solid rgba(255,255,255,0.04); color:var(--muted)}
+
+    /* ====== TABLE ====== */
+    .table-wrap{max-height:220px; overflow:auto; margin-top:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.02);}
+    table{width:100%; border-collapse:collapse; font-size:13px}
+    th,td{padding:8px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.02)}
+    th{font-weight:700}
+
+    /* ====== RIGHT PANEL ====== */
+    .chart-card{display:flex; flex-direction:column; gap:12px}
+    #chartContainer{height:380px}
+    .metrics{display:flex; gap:12px; margin-top:8px}
+    .metric{flex:1; background:rgba(255,255,255,0.02); padding:10px; border-radius:8px}
+    .metric h3{margin:0; font-size:13px}
+    .metric p{margin:6px 0 0 0; font-weight:700}
+
+    /* ====== FOOTER HELP ====== */
+    footer{margin-top:16px; color:var(--muted); font-size:13px}
+
+    /* ====== RESPONSIVE ====== */
+    @media (max-width:980px){.grid{grid-template-columns:1fr} .wrap{padding:10px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Footfall Prediction — Tourist Places & Temples</h1>
+        <p>Frontend demo: upload data, choose a model, preview and predict next-day/next-week footfall. No server required.</p>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- LEFT: controls, data table -->
+      <div class="card panel">
+        <h2>Data & Controls</h2>
+        <div class="file-uploader">
+          <label class="btn">Upload CSV (date,count)
+            <input id="fileInput" type="file" accept=".csv, text/csv" />
+          </label>
+          <div class="small">Or use sample data:</div>
+          <div class="row">
+            <button id="sampleBtn" class="alt">Load Sample Dataset</button>
+            <button id="clearBtn" class="alt">Clear</button>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="field">
+          <label class="small">Model</label>
+          <select id="modelSelect">
+            <option value="linear">Linear Regression (trend)</option>
+            <option value="ma">Moving Average</option>
+            <option value="exp">Exponential Smoothing</option>
+          </select>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <div style="flex:1" class="field">
+            <label class="small">Prediction horizon (days)</label>
+            <input id="horizon" type="number" value="14" min="1" max="365" />
+          </div>
+          <div style="width:120px" class="field">
+            <label class="small">MA window</label>
+            <input id="maWindow" type="number" value="7" min="2" max="60" />
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="row">
+          <button id="trainBtn" class="action">Train / Predict</button>
+          <button id="exportBtn" class="alt">Export CSV</button>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="small">Data preview</div>
+        <div class="table-wrap card" style="padding:8px;">
+          <table id="dataTable"><thead><tr><th>Date</th><th>Count</th></tr></thead><tbody></tbody></table>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="small">Tips</div>
+        <ul style="color:var(--muted); font-size:13px">
+          <li>CSV must have two columns: <code>date</code> and <code>count</code>. Date formats: YYYY-MM-DD recommended.</li>
+          <li>For temples/tourist places, seasonality matters — consider weekly/monthly patterns.</li>
+          <li>Want ML (LSTM/RNN)? Ask and I'll add a TF.js example (larger).</li>
+        </ul>
+      </div>
+
+      <!-- RIGHT: chart, results -->
+      <div class="card chart-card">
+        <div style="display:flex; justify-content:space-between; align-items:center">
+          <h2 style="margin:0">Visualization & Predictions</h2>
+          <div class="small">Interactive preview</div>
+        </div>
+
+        <div id="chartContainer"><canvas id="footfallChart"></canvas></div>
+
+        <div class="metrics">
+          <div class="metric">
+            <h3>Last-record</h3>
+            <p id="lastRecord">—</p>
+          </div>
+          <div class="metric">
+            <h3>Average (observed)</h3>
+            <p id="avgRecord">—</p>
+          </div>
+          <div class="metric">
+            <h3>Predicted (horizon)</h3>
+            <p id="predSummary">—</p>
+          </div>
+        </div>
+
+        <footer>
+          <div class="small">Built for quick prototyping. Works offline in the browser. For production, wire a backend and advanced models.</div>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  /************************************************************************
+   * Footfall Prediction Frontend (single-file)
+   * - Accepts CSV: date,count
+   * - Provides three lightweight models: Linear regression (closed-form),
+   *   Moving Average, Exponential Smoothing
+   * - Shows Chart.js visualization and exports predictions as CSV
+   * - Large, documented, and easy to extend
+   ************************************************************************/
+
+  // ---------- Utilities ----------
+  function parseCSV(text){
+    // Support simple CSVs; ignore blank lines
+    const rows = text.trim().split(/\r?\n/).map(r=>r.trim()).filter(r=>r.length>0);
+    const data = [];
+    for(let i=0;i<rows.length;i++){
+      const cols = rows[i].split(/,|\t/).map(c=>c.trim());
+      if(i===0){
+        // if header contains 'date' and 'count', skip header
+        const header = cols.map(c=>c.toLowerCase());
+        if(header.includes('date') && (header.includes('count')||header.includes('footfall')||header.includes('value'))){
+          continue;
+        }
+      }
+      const d = cols[0]; const v = parseFloat(cols[1]);
+      if(!d || Number.isNaN(v)) continue;
+      data.push({date: new Date(d), count: v});
+    }
+    // sort by date
+    data.sort((a,b)=>a.date - b.date);
+    return data;
+  }
+
+  function formatDateISO(d){
+    const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return `${y}-${m}-${dd}`;
+  }
+
+  function toCSV(rows){
+    const lines = ['date,count'];
+    for(const r of rows) lines.push(`${formatDateISO(r.date)},${r.count}`);
+    return lines.join('\n');
+  }
+
+  function downloadBlob(filename, text){
+    const a=document.createElement('a');
+    const blob=new Blob([text],{type:'text/csv'});
+    a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ---------- Simple Models ----------
+  // 1) Linear regression (closed form) mapping index -> count
+  function linearRegressionFit(data){
+    // map days to index (0..n-1)
+    const n = data.length; if(n===0) return null;
+    const x = []; const y = [];
+    for(let i=0;i<n;i++){ x.push(i); y.push(data[i].count); }
+    const sx = x.reduce((a,b)=>a+b,0); const sy=y.reduce((a,b)=>a+b,0);
+    const sxx = x.reduce((a,b)=>a+b*b,0); const sxy = x.reduce((a,b,i)=>a + b*y[i], 0);
+    const denom = n*sxx - sx*sx; if(denom===0) return {a:0,b:y[0]||0};
+    const a = (n*sxy - sx*sy)/denom; // slope
+    const b = (sy - a*sx)/n; // intercept
+    return {a,b};
+  }
+  function linearPredict(model, startIndex, steps){
+    const preds = [];
+    for(let k=0;k<steps;k++){
+      const x = startIndex + k;
+      const y = model.a * x + model.b;
+      preds.push(Math.max(0, y));
+    }
+    return preds;
+  }
+
+  // 2) Moving Average
+  function movingAveragePredict(data, window, steps){
+    const arr = data.map(d=>d.count).slice();
+    const preds = [];
+    for(let s=0;s<steps;s++){
+      const start = Math.max(0, arr.length - window);
+      const win = arr.slice(start);
+      const avg = win.reduce((a,b)=>a+b,0)/win.length;
+      preds.push(Math.max(0, avg));
+      arr.push(avg);
+    }
+    return preds;
+  }
+
+  // 3) Exponential smoothing (single) with alpha
+  function expSmoothingPredict(data, alpha, steps){
+    let prev = data[0].count;
+    for(let i=1;i<data.length;i++) prev = alpha*data[i].count + (1-alpha)*prev;
+    const preds = [];
+    for(let i=0;i<steps;i++){
+      const next = prev; preds.push(Math.max(0,next)); // naive forecast
+      // keep repeating as naive forecast
+    }
+    return preds;
+  }
+
+  // ---------- UI & Chart ----------
+  const fileInput = document.getElementById('fileInput');
+  const sampleBtn = document.getElementById('sampleBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const trainBtn = document.getElementById('trainBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const dataTableBody = document.querySelector('#dataTable tbody');
+  const lastRecordEl = document.getElementById('lastRecord');
+  const avgRecordEl = document.getElementById('avgRecord');
+  const predSummaryEl = document.getElementById('predSummary');
+  const modelSelect = document.getElementById('modelSelect');
+  const horizonInput = document.getElementById('horizon');
+  const maWindowInput = document.getElementById('maWindow');
+
+  let dataset = []; // array of {date:Date, count:Number}
+  let chart = null;
+
+  function renderTable(){
+    dataTableBody.innerHTML='';
+    for(const row of dataset){
+      const tr = document.createElement('tr');
+      const td1 = document.createElement('td'); td1.textContent = formatDateISO(row.date);
+      const td2 = document.createElement('td'); td2.textContent = row.count.toFixed(2);
+      tr.appendChild(td1); tr.appendChild(td2);
+      dataTableBody.appendChild(tr);
+    }
+  }
+
+  function updateMetrics(predictions){
+    if(dataset.length===0){ lastRecordEl.textContent='—'; avgRecordEl.textContent='—'; predSummaryEl.textContent='—'; return; }
+    lastRecordEl.textContent = `${dataset[dataset.length-1].count.toFixed(0)} (on ${formatDateISO(dataset[dataset.length-1].date)})`;
+    const avg = dataset.reduce((a,b)=>a+b.count,0)/dataset.length; avgRecordEl.textContent = `${avg.toFixed(1)}`;
+    if(predictions && predictions.length>0){
+      const sum = predictions.reduce((a,b)=>a+b,0); predSummaryEl.textContent = `Next ${predictions.length} days — avg ${ (sum/predictions.length).toFixed(1) }`;
+    } else predSummaryEl.textContent='—';
+  }
+
+  function ensureChart(){
+    const ctx = document.getElementById('footfallChart').getContext('2d');
+    if(chart) { chart.destroy(); chart = null; }
+    chart = new Chart(ctx, {
+      type:'line',
+      data:{datasets:[]},
+      options:{
+        maintainAspectRatio:false,
+        interaction:{mode:'index', intersect:false},
+        scales:{x:{type:'time', time:{unit:'day'}}, y:{beginAtZero:true}},
+        plugins:{legend:{display:true}}
+      }
+    });
+  }
+
+  function plotAll(predDates=[], predValues=[]){
+    ensureChart();
+    const obsDates = dataset.map(d=>d.date);
+    const obsValues = dataset.map(d=>d.count);
+    chart.data.datasets = [
+      {label:'Observed footfall', data:obsDates.map((dt,i)=>({x:dt,y:obsValues[i]})), tension:0.25, borderWidth:2, pointRadius:2},
+    ];
+    if(predValues && predValues.length>0){
+      chart.data.datasets.push({label:'Predicted', data:predDates.map((dt,i)=>({x:dt,y:predValues[i]})), borderDash:[6,4], pointRadius:3, borderWidth:2});
+    }
+    chart.update();
+  }
+
+  // ---------- Event handlers ----------
+  fileInput.addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      try{
+        const parsed = parseCSV(ev.target.result);
+        if(parsed.length===0) alert('No valid rows found in CSV. Make sure you have date,count columns.');
+        dataset = parsed;
+        renderTable(); updateMetrics(); plotAll();
+      } catch(err){ console.error(err); alert('Failed to parse CSV: '+err.message); }
+    };
+    reader.readAsText(f);
+  });
+
+  sampleBtn.addEventListener('click', ()=>{
+    // generate synthetic sample data with weekly pattern + trend + noise
+    const start = new Date(); start.setMonth(start.getMonth()-6);
+    const rows = [];
+    let base = 120;
+    for(let i=0;i<180;i++){
+      const dt = new Date(start); dt.setDate(start.getDate()+i);
+      // weekly seasonality: weekends higher
+      const day = dt.getDay(); // 0 Sun .. 6 Sat
+      const seasonal = (day===0||day===6)? 1.5 : 0.9;
+      const trend = 1 + i*0.002; // slight upward trend
+      const noise = (Math.random()-0.5)*20;
+      const val = Math.max(0, (base * seasonal * trend) + noise);
+      rows.push({date: new Date(dt), count: val});
+    }
+    dataset = rows; renderTable(); updateMetrics(); plotAll();
+  });
+
+  clearBtn.addEventListener('click', ()=>{ dataset = []; renderTable(); updateMetrics(); plotAll(); });
+
+  trainBtn.addEventListener('click', ()=>{
+    if(dataset.length<3){ alert('Need at least 3 data points to train.'); return; }
+    const horizon = parseInt(horizonInput.value||14,10);
+    const model = modelSelect.value;
+    let preds = [];
+    if(model==='linear'){
+      const modelLR = linearRegressionFit(dataset);
+      preds = linearPredict(modelLR, dataset.length, horizon);
+    } else if(model==='ma'){
+      const w = Math.max(2, parseInt(maWindowInput.value||7,10));
+      preds = movingAveragePredict(dataset, w, horizon);
+    } else if(model==='exp'){
+      const alpha = 0.35;
+      preds = expSmoothingPredict(dataset, alpha, horizon);
+    }
+    // build date array for preds
+    const lastDate = dataset[dataset.length-1].date;
+    const predDates = [];
+    for(let i=1;i<=horizon;i++){ const d = new Date(lastDate); d.setDate(d.getDate()+i); predDates.push(d); }
+    plotAll(predDates, preds);
+    updateMetrics(preds);
+    // store predictions to element for export
+    chart._predictions = predDates.map((d,i)=>({date:d, count:preds[i]}));
+  });
+
+  exportBtn.addEventListener('click', ()=>{
+    // combine observed + predicted (if any) into CSV
+    let combined = dataset.slice();
+    const preds = chart && chart._predictions ? chart._predictions : [];
+    for(const p of preds) combined.push({date:p.date, count:p.count});
+    if(combined.length===0){ alert('No data to export'); return; }
+    const csv = toCSV(combined);
+    downloadBlob('footfall_export.csv', csv);
+  });
+
+  // initialize an empty chart on load
+  window.addEventListener('load', ()=>{
+    ensureChart();
+  });
+
+  // expose a few functions to console for power users
+  window.__FP = {
+    dataset, parseCSV, linearRegressionFit, movingAveragePredict, expSmoothingPredict
+  };
+  </script>
+</body>
+</html>
